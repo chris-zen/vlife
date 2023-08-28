@@ -81,19 +81,26 @@ pub struct Neurons {
     inputs: V<NUM_INPUTS>,
     layer1: Layer<NUM_INPUTS, NUM_PROCESSING>,
     layer2: Layer<NUM_PROCESSING, NUM_OUTPUTS>,
+    working_neurons: Scalar,
 }
 
 impl Neurons {
     pub fn random() -> Self {
         let mut layer1 = Layer::random();
-        layer1.activation = ActivationFunction::Tanh;
+        layer1.activation = ActivationFunction::Sigmoid;
         let mut layer2 = Layer::random();
         layer2.activation = ActivationFunction::Tanh;
+        let working_neurons = layer1.num_working_neurons() + layer2.num_working_neurons();
         Self {
             inputs: V::zeros(),
             layer1,
             layer2,
+            working_neurons,
         }
+    }
+
+    pub fn num_working_neurons(&self) -> Scalar {
+        self.working_neurons
     }
 
     pub fn process(&mut self) {
@@ -148,16 +155,21 @@ define_inputs!(
     (acceleration_pos, 2),
     acceleration_magnitude,
     radius,
+    energy_amount,
+    energy_delta,
+    energy_stored,
     (molecules_amount, NUM_MOLECULES),
     molecules_total,
     movement_direction,
     movement_speed,
-    energy_amount,
-    energy_delta,
+    contact_energy_absorption,
+    contact_count,
+    (contact_normal, 2),
 );
 
 impl std::fmt::Display for Neurons {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Working neurons: {:.0?}", self.working_neurons)?;
         writeln!(f, "I1: {:.2?}", self.inputs)?;
         writeln!(f, "O1: {:.2?}", self.layer1.outputs)?;
         writeln!(f, "W1: {:.2?}", self.layer1.weights)?;
@@ -190,6 +202,7 @@ impl std::fmt::Display for Neurons {
 }
 
 pub struct Layer<const I: usize, const O: usize> {
+    /// Every row contains the weights for a given neuron.
     weights: M<O, I>,
     bias: V<O>,
     activation: ActivationFunction,
@@ -214,6 +227,16 @@ impl<const I: usize, const O: usize> Layer<I, O> {
 
     pub fn outputs(&self) -> &V<O> {
         &self.outputs
+    }
+
+    fn num_working_neurons(&self) -> Scalar {
+        let active = self
+            .weights
+            .apply_into(|x| *x = if x.abs() > 0.0 { 1.0 } else { 0.0 });
+        active
+            .row_sum()
+            .apply(|x| *x = if x.abs() > 0.0 { 1.0 } else { 0.0 });
+        active.sum()
     }
 }
 

@@ -1,7 +1,6 @@
 use indexmap::{map::Iter, IndexMap};
 use nalgebra::SimdComplexField;
 use num_traits::zero;
-use std::collections::HashSet;
 
 use crate::{object::Object, Scalar, Vec2};
 
@@ -16,7 +15,7 @@ pub struct Physics {
     response_coef: Scalar,
     next_id: ObjectId,
     objects: IndexMap<ObjectId, Object>,
-    contacts: HashSet<(ObjectId, ObjectId)>,
+    contacts: Vec<ObjectContact>,
 }
 
 impl Physics {
@@ -27,7 +26,7 @@ impl Physics {
             response_coef: RESPONSE_COEF,
             next_id: 0,
             objects: IndexMap::new(),
-            contacts: HashSet::new(),
+            contacts: Vec::new(),
         }
     }
 
@@ -65,8 +64,8 @@ impl Physics {
         self.objects.remove(&id);
     }
 
-    pub fn contacts(&self) -> impl Iterator<Item = (ObjectId, ObjectId)> + '_ {
-        self.contacts.iter().cloned()
+    pub fn contacts(&self) -> impl Iterator<Item = &ObjectContact> + '_ {
+        self.contacts.iter()
     }
 
     pub fn update(&mut self, dt: Scalar) {
@@ -97,20 +96,24 @@ impl Physics {
             let (visited, remaining) = objects.split_at_mut(i + 1);
             let (id1, o1) = &mut visited.iter_mut().nth(i).unwrap();
             for (id2, o2) in remaining {
-                let v = o1.position - o2.position;
-                let dist2 = v.norm_squared();
+                let dist_vec = o1.position - o2.position;
+                let dist2 = dist_vec.norm_squared();
                 let min_dist = o1.radius + o2.radius;
                 if dist2 < min_dist * min_dist {
-                    self.contacts.insert((**id1, *id2));
                     let total_mass = o1.mass + o2.mass;
                     let mass_ratio_1 = o1.mass / total_mass;
                     let mass_ratio_2 = o2.mass / total_mass;
                     let dist = dist2.simd_sqrt();
                     let overlap = min_dist - dist;
-                    let n = v / dist;
+                    let normal = dist_vec / dist;
                     let delta = -0.5 * self.response_coef * overlap;
-                    o1.position -= n * (mass_ratio_1 * delta);
-                    o2.position += n * (mass_ratio_2 * delta);
+                    o1.position -= normal * (mass_ratio_1 * delta);
+                    o2.position += normal * (mass_ratio_2 * delta);
+                    self.contacts.push(ObjectContact {
+                        id1: **id1,
+                        id2: *id2,
+                        normal,
+                    });
                 }
             }
         }
@@ -180,4 +183,11 @@ impl<'a> Iterator for Objects<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|(id, object)| (*id, object))
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjectContact {
+    pub id1: ObjectId,
+    pub id2: ObjectId,
+    pub normal: Vec2,
 }

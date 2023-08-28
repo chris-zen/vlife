@@ -2319,6 +2319,8 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "env_logger",
+ "nalgebra",
+ "num-traits",
  "vlife-physics",
  "vlife-simulator",
 ]

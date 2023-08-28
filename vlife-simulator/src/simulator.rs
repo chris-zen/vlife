@@ -1,8 +1,8 @@
 use indexmap::{map::Iter, IndexMap};
-use rand::{prelude::ThreadRng, Rng};
 use num_traits::float::FloatConst;
-use std::{collections::HashMap, fmt::Display, ops::Deref};
 use num_traits::Zero;
+use rand::{prelude::ThreadRng, Rng};
+use std::{collections::HashMap, fmt::Display, ops::Deref};
 
 use vlife_physics::{Object, ObjectId, Physics, Scalar, Vec2};
 
@@ -15,6 +15,7 @@ pub struct Simulator {
     next_cell_id: CellId,
     cells: IndexMap<CellId, Cell>,
     physics: Physics,
+    time: Scalar,
     dead_cells: Vec<CellId>,
     object_cell: HashMap<ObjectId, CellId>,
     // reactions: M<NUM_MOLECULES, NUM_MOLECULES>,
@@ -27,6 +28,7 @@ impl Simulator {
             next_cell_id: 0,
             cells: IndexMap::new(),
             physics: Physics::new(world_size),
+            time: 0.0,
             dead_cells: Vec::new(),
             object_cell: HashMap::new(),
             // reactions: Self::init_reactions(),
@@ -65,13 +67,17 @@ impl Simulator {
     //     reactions
     // }
 
+    pub fn time(&self) -> Scalar {
+        self.time
+    }
+
     pub fn add_testing_cell(&mut self) -> CellId {
         let position = Vec2::new(20.0, 200.0);
         let radius = 10.0;
         let object_id = self.physics.add_object(position, radius);
         let cell_id = self.next_cell_id;
         self.next_cell_id += 1;
-        let mut cell = Cell::random(object_id, radius);
+        let mut cell = Cell::random(self.time, object_id, radius);
         cell.molecules.set_zero();
         cell.energy = 10000.0;
         cell.movement_speed_limit = 10.0;
@@ -92,7 +98,7 @@ impl Simulator {
 
         let cell_id = self.next_cell_id;
         self.next_cell_id += 1;
-        let cell = Cell::random(object_id, radius);
+        let cell = Cell::random(self.time, object_id, radius);
         self.cells.insert(cell_id, cell);
         self.object_cell.insert(object_id, cell_id);
         cell_id
@@ -175,15 +181,18 @@ impl Simulator {
     }
 
     fn handle_contacts(&mut self, dt: Scalar) {
-        for (object_id1, object_id2) in self.physics.contacts() {
+        for (_, cell) in self.cells.iter_mut() {
+            cell.contact_count = 0.0;
+        }
+        for contact in self.physics.contacts() {
             // println!(">>>");
             let cell1 = self
                 .object_cell
-                .get(&object_id1)
+                .get(&contact.id1)
                 .and_then(|cell_id| self.cells.get(cell_id).map(|cell| (cell_id, cell)));
             let cell2 = self
                 .object_cell
-                .get(&object_id2)
+                .get(&contact.id2)
                 .and_then(|cell_id| self.cells.get(cell_id).map(|cell| (cell_id, cell)));
             let energy_deltas = cell1.zip(cell2).map(|((id1, cell1), (id2, cell2))| {
                 let delta1 = cell1.energy_absorption_from(cell2, dt);
@@ -196,10 +205,14 @@ impl Simulator {
                 if let Some(cell1) = self.cells.get_mut(id1) {
                     // println!("{:.4} {:.4} {:.4}", cell1.energy, delta1 - delta2, cell1.energy + delta1 - delta2);
                     cell1.energy += delta1 - delta2;
+                    cell1.contact_count += 1.0;
+                    cell1.contact_normal += contact.normal;
                 }
                 if let Some(cell2) = self.cells.get_mut(id2) {
                     // println!("{:.4} {:.4} {:.4}", cell2.energy, delta2 - delta1, cell2.energy + delta2 - delta1);
                     cell2.energy += delta2 - delta1;
+                    cell2.contact_count += 1.0;
+                    cell2.contact_normal -= contact.normal;
                 }
             }
         }
@@ -215,12 +228,12 @@ impl Simulator {
                 cell.update(dt, context);
                 object.set_radius(cell.contracted_size());
 
-                // let current_velocity = object.velocity();
-                // object.set_velocity(0.5 * (current_velocity + cell.movement_velocity), dt);
-                object.set_velocity(cell.movement_velocity, dt);
+                let current_velocity = object.velocity();
+                object.set_velocity(0.5 * (current_velocity + cell.movement_velocity), dt);
+                // object.set_velocity(cell.movement_velocity, dt);
                 // object.set_acceleration(cell.movement_velocity / (object.mass() * dt));
             }
-            if cell.energy() <= 0.0 {
+            if cell.is_dead() {
                 self.dead_cells.push(*id);
             }
         }
@@ -236,7 +249,7 @@ impl Simulator {
             }
         }
         for _ in 0..num_dead_cells {
-            self.add_random_cell();
+            // self.add_random_cell();
         }
     }
 }

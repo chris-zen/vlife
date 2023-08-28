@@ -63,19 +63,18 @@ impl Object {
 
 impl std::fmt::Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "mass: {:.2?}, radius: {:.2}", self.mass, self.radius)?;
-        writeln!(f, "pos: {:.2?}", self.position)?;
         writeln!(
             f,
-            "vel: {:.2?} {:6.2?}",
-            self.velocity,
-            self.velocity.magnitude()
+            "Radius: {:4.1}, Mass: {:.2}, Position: {:.2?}",
+            self.radius, self.mass, self.position
         )?;
         writeln!(
             f,
-            "acc: {:.2?} {:6.2?}",
+            "Velocity: {:4.1?} {:4.1?}, Acceleration: {:4.1?} {:4.1?}",
+            self.velocity.magnitude(),
+            self.velocity,
+            self.acceleration.magnitude(),
             self.acceleration,
-            self.acceleration.magnitude()
         )?;
         Ok(())
     }
