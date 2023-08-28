@@ -1,0 +1,11 @@
+[package]
+name = "vlife-egui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.22"
+env_logger = "0.10"
+
+vlife-physics = { path = "../vlife-physics" }
+vlife-simulator = { path = "../vlife-simulator" }
