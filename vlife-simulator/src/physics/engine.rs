@@ -1,8 +1,10 @@
 use indexmap::{map::Iter, IndexMap};
 use nalgebra::SimdComplexField;
 use num_traits::zero;
+use std::ops::Neg;
 
-use crate::{object::Object, Scalar, Vec2};
+use crate::physics::object::Object;
+use crate::{Scalar, Vec2};
 
 pub const SUB_STEPS: usize = 1;
 pub const RESPONSE_COEF: Scalar = 0.1;
@@ -15,7 +17,7 @@ pub struct Physics {
     response_coef: Scalar,
     next_id: ObjectId,
     objects: IndexMap<ObjectId, Object>,
-    contacts: Vec<ObjectContact>,
+    contacts: Vec<Contact>,
 }
 
 impl Physics {
@@ -64,7 +66,7 @@ impl Physics {
         self.objects.remove(&id);
     }
 
-    pub fn contacts(&self) -> impl Iterator<Item = &ObjectContact> + '_ {
+    pub fn contacts(&self) -> impl Iterator<Item = &Contact> + '_ {
         self.contacts.iter()
     }
 
@@ -96,7 +98,11 @@ impl Physics {
             let (visited, remaining) = objects.split_at_mut(i + 1);
             let (id1, o1) = &mut visited.iter_mut().nth(i).unwrap();
             for (id2, o2) in remaining {
-                let dist_vec = o1.position - o2.position;
+                let dist_vec = if o1.position != o2.position {
+                    o1.position - o2.position
+                } else {
+                    Vec2::new(0.001, 0.0)
+                };
                 let dist2 = dist_vec.norm_squared();
                 let min_dist = o1.radius + o2.radius;
                 if dist2 < min_dist * min_dist {
@@ -109,37 +115,51 @@ impl Physics {
                     let delta = -0.5 * self.response_coef * overlap;
                     o1.position -= normal * (mass_ratio_1 * delta);
                     o2.position += normal * (mass_ratio_2 * delta);
-                    self.contacts.push(ObjectContact {
-                        id1: **id1,
-                        id2: *id2,
-                        normal,
-                    });
+                    if o1.position.x.is_nan()
+                        || o1.position.y.is_nan()
+                        || o2.position.x.is_nan()
+                        || o2.position.y.is_nan()
+                    {
+                        println!("total_mass={}", total_mass);
+                        println!(
+                            "mass_ratio_1={}, mass_ratio_2={}",
+                            mass_ratio_1, mass_ratio_2
+                        );
+                        println!("dist={}, dist_vec={:?}, dist2={}", dist, dist_vec, dist2);
+                        println!("overlap={}", overlap);
+                        println!("normal={:?}", normal);
+                        println!("delta={}", delta);
+                        panic!();
+                    }
+                    self.contacts.push(Contact::objects(**id1, *id2, normal));
                 }
             }
         }
     }
 
     fn apply_constraints(&mut self) {
-        for (_, object) in self.objects.iter_mut() {
-            Self::apply_world_constraints(object, self.world_size, self.response_coef);
-        }
-    }
-
-    fn apply_world_constraints(o1: &mut Object, world_size: Vec2, response_coef: Scalar) {
-        let response = 0.5 * response_coef;
-        if o1.position.x + o1.radius >= world_size.x {
-            let overlap = o1.position.x + o1.radius - world_size.x;
-            o1.position.x -= response * overlap;
-        } else if o1.position.x - o1.radius < 0.0 {
-            let overlap = o1.radius - o1.position.x;
-            o1.position.x += response * overlap;
-        }
-        if o1.position.y + o1.radius >= world_size.y {
-            let overlap = o1.position.y + o1.radius - world_size.y;
-            o1.position.y -= response * overlap;
-        } else if o1.position.y - o1.radius < 0.0 {
-            let overlap = o1.radius - o1.position.y;
-            o1.position.y += response * overlap;
+        for (object_id, object) in self.objects.iter_mut() {
+            let response = 0.5 * self.response_coef;
+            if object.position.x + object.radius >= self.world_size.x {
+                let overlap = object.position.x + object.radius - self.world_size.x;
+                object.position.x -= response * overlap;
+                self.contacts
+                    .push(Contact::surface(*object_id, Vec2::x().neg()));
+            } else if object.position.x - object.radius < 0.0 {
+                let overlap = object.radius - object.position.x;
+                object.position.x += response * overlap;
+                self.contacts.push(Contact::surface(*object_id, Vec2::x()));
+            }
+            if object.position.y + object.radius >= self.world_size.y {
+                let overlap = object.position.y + object.radius - self.world_size.y;
+                object.position.y -= response * overlap;
+                self.contacts
+                    .push(Contact::surface(*object_id, Vec2::y().neg()));
+            } else if object.position.y - object.radius < 0.0 {
+                let overlap = object.radius - object.position.y;
+                object.position.y += response * overlap;
+                self.contacts.push(Contact::surface(*object_id, Vec2::y()));
+            }
         }
     }
 
@@ -186,8 +206,24 @@ impl<'a> Iterator for Objects<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ObjectContact {
-    pub id1: ObjectId,
-    pub id2: ObjectId,
-    pub normal: Vec2,
+pub enum Contact {
+    Objects {
+        id1: ObjectId,
+        id2: ObjectId,
+        normal: Vec2,
+    },
+    Surface {
+        id: ObjectId,
+        normal: Vec2,
+    },
+}
+
+impl Contact {
+    fn objects(id1: ObjectId, id2: ObjectId, normal: Vec2) -> Self {
+        Self::Objects { id1, id2, normal }
+    }
+
+    fn surface(id: ObjectId, normal: Vec2) -> Self {
+        Self::Surface { id, normal }
+    }
 }

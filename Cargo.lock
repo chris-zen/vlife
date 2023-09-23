@@ -1643,6 +1643,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-float"
+version = "3.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a54938017eacd63036332b4ae5c8a49fc8c0c1d6d629893057e4f13609edd06"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "ordered-stream"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2321,17 +2330,16 @@ dependencies = [
  "env_logger",
  "nalgebra",
  "num-traits",
- "vlife-physics",
  "vlife-simulator",
 ]
 
 [[package]]
-name = "vlife-physics"
+name = "vlife-macros"
 version = "0.1.0"
 dependencies = [
- "indexmap",
- "nalgebra",
- "num-traits",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -2341,9 +2349,10 @@ dependencies = [
  "indexmap",
  "nalgebra",
  "num-traits",
+ "ordered-float",
  "paste",
  "rand",
- "vlife-physics",
+ "vlife-macros",
 ]
 
 [[package]]

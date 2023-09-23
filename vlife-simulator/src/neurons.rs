@@ -1,7 +1,8 @@
 use rand::{seq::SliceRandom, Rng};
+use vlife_macros::BuildGenome;
 
-use vlife_physics::Scalar;
-
+use crate::genome::{BuildGenome, Gen, GenomeBuilder};
+use crate::Scalar;
 use crate::{cell::NUM_MOLECULES, VView, M, V};
 
 macro_rules! define_inputs {
@@ -64,37 +65,97 @@ macro_rules! define_inputs {
     };
 }
 
-const NUM_METABOLIC_OUTPUTS: usize = NUM_MOLECULES * NUM_MOLECULES;
-const NUM_ENERGY_OUTPUTS: usize = NUM_MOLECULES;
-const NUM_CONTRACTION_OUTPUTS: usize = 1;
-const NUM_MOVEMENT_OUTPUTS: usize = 2;
-const NUM_CONTACT_OUTPUTS: usize = 1;
+macro_rules! define_outputs {
+    ( $name:ident $(,)?) => {
+        define_outputs!(@next 0, [$name]);
+
+    };
+
+    ( $name:ident, $($args:tt),* $(,)?) => {
+        define_outputs!(@next 0, [$name, $($args),*]);
+    };
+
+    ( ($name:ident, $len:expr) $(,)?) => {
+        define_outputs!(@next 0, [($name, $len)]);
+
+    };
+
+    ( ($name:ident, $len:expr), $($args:tt),* $(,)?) => {
+        define_outputs!(@next 0, [($name, $len), $($args),*]);
+    };
+
+    (@next $start:expr, [$name:ident $(,)?]) => {
+        define_outputs!(@scalar $name, $start);
+        const NUM_OUTPUTS: usize = $start + 1;
+    };
+
+    (@next $start:expr, [$name:ident, $($args:tt),* $(,)?]) => {
+        define_outputs!(@scalar $name, $start);
+        define_outputs!(@next $start + 1, [$($args),*]);
+    };
+
+    (@next $start:expr, [($name:ident, $len:expr) $(,)?]) => {
+        define_outputs!(@vector $name, $start, $len);
+        const NUM_OUTPUTS: usize = $start + $len;
+    };
+
+    (@next $start:expr, [($name:ident, $len:expr), $($args:tt),* $(,)?]) => {
+        define_outputs!(@vector $name, $start, $len);
+        define_outputs!(@next $start + $len, [$($args),*]);
+    };
+
+    (@scalar $name:ident, $start:expr) => {
+        paste::paste! {
+            impl Neurons {
+                pub fn [<get_ $name>](&self) -> Scalar {
+                    self.output_layer.outputs()[$start]
+                }
+            }
+        }
+    };
+
+    (@vector $name:ident, $start:expr, $len:expr) => {
+        paste::paste! {
+            impl Neurons {
+                pub fn [<get_ $name>](&self) -> VView<'_, $len, NUM_OUTPUTS> {
+                    let outputs = self.output_layer.outputs();
+                    outputs.fixed_rows::<$len>($start)
+                }
+            }
+        }
+    };
+}
 
 const NUM_PROCESSING: usize = NUM_INPUTS / 2;
-const NUM_OUTPUTS: usize = NUM_METABOLIC_OUTPUTS
-    + NUM_ENERGY_OUTPUTS
-    + NUM_CONTRACTION_OUTPUTS
-    + NUM_MOVEMENT_OUTPUTS
-    + NUM_CONTACT_OUTPUTS;
 
+#[derive(Clone, BuildGenome)]
 pub struct Neurons {
     inputs: V<NUM_INPUTS>,
-    layer1: Layer<NUM_INPUTS, NUM_PROCESSING>,
-    layer2: Layer<NUM_PROCESSING, NUM_OUTPUTS>,
+    #[build_genome(nested)]
+    input_layer: Layer<NUM_INPUTS, NUM_PROCESSING>,
+    #[build_genome(nested)]
+    processing_layer: Layer<NUM_PROCESSING, NUM_PROCESSING>,
+    #[build_genome(nested)]
+    output_layer: Layer<NUM_PROCESSING, NUM_OUTPUTS>,
     working_neurons: Scalar,
 }
 
 impl Neurons {
     pub fn random() -> Self {
-        let mut layer1 = Layer::random();
-        layer1.activation = ActivationFunction::Sigmoid;
-        let mut layer2 = Layer::random();
-        layer2.activation = ActivationFunction::Tanh;
-        let working_neurons = layer1.num_working_neurons() + layer2.num_working_neurons();
+        let mut input_layer = Layer::random();
+        input_layer.activation = ActivationFunction::Sigmoid;
+        let mut processing_layer = Layer::random();
+        processing_layer.activation = ActivationFunction::Tanh;
+        let mut output_layer = Layer::random();
+        output_layer.activation = ActivationFunction::Tanh;
+        let working_neurons = input_layer.num_working_neurons()
+            + processing_layer.num_working_neurons()
+            + output_layer.num_working_neurons();
         Self {
             inputs: V::zeros(),
-            layer1,
-            layer2,
+            input_layer,
+            processing_layer,
+            output_layer,
             working_neurons,
         }
     }
@@ -105,106 +166,97 @@ impl Neurons {
 
     pub fn process(&mut self) {
         // println!("IN: {:.2}", self.inputs.transpose());
-        self.layer1.process(&self.inputs);
-        // println!("HI: {:.2}", self.layer1.outputs().transpose());
-        self.layer2.process(self.layer1.outputs());
-        // println!("OUT: {:.2}", self.layer2.outputs().transpose());
-    }
-
-    fn outputs_slice<const N: usize>(&self, start: usize) -> VView<'_, N, NUM_OUTPUTS> {
-        let outputs = self.layer2.outputs();
-        outputs.fixed_rows::<N>(start)
-    }
-
-    fn outputs(&self) -> &V<NUM_OUTPUTS> {
-        self.layer2.outputs()
-    }
-
-    pub fn metabolism_factors_out(&self) -> VView<'_, NUM_METABOLIC_OUTPUTS, NUM_OUTPUTS> {
-        self.outputs_slice::<NUM_METABOLIC_OUTPUTS>(0)
-    }
-
-    pub fn energy_source_out(&self) -> VView<'_, NUM_ENERGY_OUTPUTS, NUM_OUTPUTS> {
-        self.outputs_slice::<NUM_ENERGY_OUTPUTS>(NUM_METABOLIC_OUTPUTS)
-    }
-
-    pub fn contraction_out(&self) -> Scalar {
-        self.outputs()[NUM_METABOLIC_OUTPUTS + NUM_ENERGY_OUTPUTS]
-    }
-
-    pub fn movement_direction_out(&self) -> Scalar {
-        self.outputs()[NUM_METABOLIC_OUTPUTS + NUM_ENERGY_OUTPUTS + NUM_CONTRACTION_OUTPUTS]
-    }
-
-    pub fn movement_speed_out(&self) -> Scalar {
-        self.outputs()[NUM_METABOLIC_OUTPUTS + NUM_ENERGY_OUTPUTS + NUM_CONTRACTION_OUTPUTS + 1]
-    }
-
-    pub fn contact_energy_absorption_out(&self) -> Scalar {
-        self.outputs()[NUM_METABOLIC_OUTPUTS
-            + NUM_ENERGY_OUTPUTS
-            + NUM_CONTRACTION_OUTPUTS
-            + NUM_MOVEMENT_OUTPUTS]
+        self.input_layer.process(&self.inputs);
+        // println!("INL: {:.2}", self.input_layer.outputs().transpose());
+        self.processing_layer.process(self.input_layer.outputs());
+        // println!("HIL: {:.2}", self.processing_layer.outputs().transpose());
+        self.output_layer.process(self.processing_layer.outputs());
+        // println!("OUL: {:.2}", self.output_layer.outputs().transpose());
     }
 }
 
 // This will generate all the setters for the neuronal network inputs
+// (velocity_pos, 2),
+// (acceleration_pos, 2),
 define_inputs!(
-    (velocity_pos, 2),
     velocity_magnitude,
-    (acceleration_pos, 2),
     acceleration_magnitude,
     radius,
+    age,
     energy_amount,
-    energy_delta,
     energy_stored,
-    (molecules_amount, NUM_MOLECULES),
+    energy_delta,
+    zero_energy,
+    division_energy_reserve,
+    division_grow_factor,
+    (molecules_proportion, NUM_MOLECULES),
     molecules_total,
     movement_direction,
     movement_speed,
+    (movement_velocity, 2),
+    movement_velocity_magnitude,
     contact_energy_absorption,
     contact_count,
     (contact_normal, 2),
+    contact_normal_magnitude,
+);
+
+define_outputs!(
+    (energy_metabolism, NUM_MOLECULES),
+    division_energy_reserve,
+    contraction_amount,
+    movement_angular_speed,
+    movement_kinetic_speed,
+    contact_energy_absorption,
 );
 
 impl std::fmt::Display for Neurons {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Working neurons: {:.0?}", self.working_neurons)?;
-        writeln!(f, "I1: {:.2?}", self.inputs)?;
-        writeln!(f, "O1: {:.2?}", self.layer1.outputs)?;
-        writeln!(f, "W1: {:.2?}", self.layer1.weights)?;
-        writeln!(f, "B1: {:.2?}", self.layer1.bias)?;
-        writeln!(f, "O2: {:.2?}", self.layer2.outputs)?;
-        writeln!(
-            f,
-            "activations: {:?}",
-            [self.layer1.activation, self.layer2.activation]
-        )?;
+        writeln!(f, "I1: {:6.2?}", self.inputs)?;
+        // writeln!(f, "W1: {:.2?}", self.input_layer.weights)?;
+        writeln!(f, "B1: {:6.2?}", self.input_layer.bias)?;
+        writeln!(f, "O1: {:6.2?}", self.input_layer.outputs)?;
+        writeln!(f, "O2: {:.2?}", self.processing_layer.outputs)?;
+        writeln!(f, "O3: {:.2?}", self.output_layer.outputs)?;
         // writeln!(
         //     f,
-        //     "metabolism_factors: {:.2?}",
-        //     self.metabolism_factors_out().clone_owned()
+        //     "activations: {:?}",
+        //     [self.input_layer.activation, self.output_layer.activation]
         // )?;
         writeln!(
             f,
-            "energy_source: {:.2?}",
-            self.energy_source_out().clone_owned()
+            "energy_metabolism: {:.2?}",
+            self.get_energy_metabolism().clone_owned()
         )?;
+        writeln!(f, "contraction: {:.2?}", self.get_contraction_amount())?;
         writeln!(
             f,
             "movement_angular_speed: {:.2?}",
-            self.movement_direction_out()
+            self.get_movement_angular_speed()
         )?;
-        writeln!(f, "movement_speed: {:.2?}", self.movement_speed_out())?;
-        writeln!(f, "contraction: {:.2?}", self.contraction_out())?;
+        writeln!(
+            f,
+            "movement_kinetic_speed: {:.2?}",
+            self.get_movement_kinetic_speed()
+        )?;
+        writeln!(
+            f,
+            "contact_energy_absorption: {:.2?}",
+            self.get_contact_energy_absorption()
+        )?;
         Ok(())
     }
 }
 
+#[derive(Clone, BuildGenome)]
 pub struct Layer<const I: usize, const O: usize> {
     /// Every row contains the weights for a given neuron.
+    #[build_genome(nested)]
     weights: M<O, I>,
+    #[build_genome(nested)]
     bias: V<O>,
+    #[build_genome(nested)]
     activation: ActivationFunction,
     outputs: V<O>,
 }
@@ -274,6 +326,19 @@ impl ActivationFunction {
             Self::Relu => input.apply_into(|x| *x = x.max(0.0)),
             Self::Swish => input.apply_into(|x| *x = *x / (1.0 + (-*x).exp())),
         }
+    }
+}
+
+impl BuildGenome for ActivationFunction {
+    fn build_genome<'a>(&self, builder: GenomeBuilder) {
+        let value = match self {
+            ActivationFunction::Linear => 1.0,
+            ActivationFunction::Sigmoid => 2.0,
+            ActivationFunction::Tanh => 3.0,
+            ActivationFunction::Relu => 4.0,
+            ActivationFunction::Swish => 5.0,
+        };
+        builder.add("activation_function", Gen { value: value });
     }
 }
 

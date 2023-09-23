@@ -13,6 +13,9 @@ pub struct Object {
 
 impl Object {
     pub fn new(radius: Scalar, position: Vec2) -> Self {
+        if position.x.is_nan() || position.y.is_nan() {
+            panic!("nan");
+        }
         let mass = Scalar::PI() * radius * radius;
         Self {
             mass,
@@ -70,7 +73,7 @@ impl std::fmt::Display for Object {
         )?;
         writeln!(
             f,
-            "Velocity: {:4.1?} {:4.1?}, Acceleration: {:4.1?} {:4.1?}",
+            "Velocity: {:5.1?} {:5.1?}, Acceleration: {:5.1?} {:5.1?}",
             self.velocity.magnitude(),
             self.velocity,
             self.acceleration.magnitude(),

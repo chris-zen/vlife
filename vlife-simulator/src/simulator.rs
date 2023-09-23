@@ -1,12 +1,15 @@
 use indexmap::{map::Iter, IndexMap};
-use num_traits::float::FloatConst;
-use num_traits::Zero;
+use num_traits::{float::FloatConst, Zero};
 use rand::{prelude::ThreadRng, Rng};
 use std::{collections::HashMap, fmt::Display, ops::Deref};
 
-use vlife_physics::{Object, ObjectId, Physics, Scalar, Vec2};
-
 use crate::cell::{Cell, MAX_SIZE};
+use crate::cell_rank::CellRank;
+use crate::genome::Genome;
+use crate::physics::{Contact, Object, ObjectId, Physics};
+use crate::{Scalar, Vec2};
+
+pub const RANK_SIZE: usize = 100;
 
 pub type CellId = usize;
 
@@ -17,8 +20,10 @@ pub struct Simulator {
     physics: Physics,
     time: Scalar,
     dead_cells: Vec<CellId>,
+    born_cells: Vec<Cell>,
     object_cell: HashMap<ObjectId, CellId>,
-    // reactions: M<NUM_MOLECULES, NUM_MOLECULES>,
+    min_cells: usize,
+    rank: CellRank,
 }
 
 impl Simulator {
@@ -30,42 +35,17 @@ impl Simulator {
             physics: Physics::new(world_size),
             time: 0.0,
             dead_cells: Vec::new(),
+            born_cells: Vec::new(),
             object_cell: HashMap::new(),
-            // reactions: Self::init_reactions(),
+            min_cells: 0,
+            rank: CellRank::new(RANK_SIZE),
         }
     }
 
-    // fn init_reactions() -> M<NUM_MOLECULES, NUM_MOLECULES> {
-    //     let mut reactions = M::identity();
-    //
-    //     // Initial proportions
-    //     let mut proportion = 1.0;
-    //     for row in 0..(NUM_MOLECULES - 1) {
-    //         let col = row + 1;
-    //         reactions[(row, col)] = proportion;
-    //         proportion += 0.0;
-    //     }
-    //     println!("{:.2}", reactions);
-    //     // Transitive proportions
-    //     for row in (0..=(NUM_MOLECULES - 3)).rev() {
-    //         for col in (row + 2)..NUM_MOLECULES {
-    //             reactions[(row, col)] = reactions[(row, row + 1)] * reactions[(row + 1, col)];
-    //         }
-    //     }
-    //     println!("{:.2}", reactions);
-    //     let mut i = 1.0;
-    //     // Inverse proportions
-    //     for row in 1..NUM_MOLECULES {
-    //         for col in 0..(row - 1) {
-    //             // reactions[(row, col)] = 1.0 / reactions[(col, row)];
-    //             reactions[(col, row)] = i;
-    //             i += 1.0;
-    //         }
-    //     }
-    //     println!("{:.2}", reactions);
-    //     // panic!();
-    //     reactions
-    // }
+    pub fn with_min_cells(mut self, min_cells: usize) -> Self {
+        self.min_cells = min_cells;
+        self
+    }
 
     pub fn time(&self) -> Scalar {
         self.time
@@ -77,7 +57,7 @@ impl Simulator {
         let object_id = self.physics.add_object(position, radius);
         let cell_id = self.next_cell_id;
         self.next_cell_id += 1;
-        let mut cell = Cell::random(self.time, object_id, radius);
+        let mut cell = Cell::random(object_id, radius);
         cell.molecules.set_zero();
         cell.energy = 10000.0;
         cell.movement_speed_limit = 10.0;
@@ -86,6 +66,11 @@ impl Simulator {
         self.cells.insert(cell_id, cell);
         self.object_cell.insert(object_id, cell_id);
         cell_id
+    }
+
+    fn add_cell(&mut self, _genome: Genome) {
+        // Cell::new(genome);
+        todo!()
     }
 
     pub fn add_random_cell(&mut self) -> CellId {
@@ -98,7 +83,7 @@ impl Simulator {
 
         let cell_id = self.next_cell_id;
         self.next_cell_id += 1;
-        let cell = Cell::random(self.time, object_id, radius);
+        let cell = Cell::random(object_id, radius);
         self.cells.insert(cell_id, cell);
         self.object_cell.insert(object_id, cell_id);
         cell_id
@@ -178,6 +163,7 @@ impl Simulator {
         self.handle_contacts(dt);
         self.update_cells(dt);
         self.remove_dead_cells();
+        self.add_born_cells();
     }
 
     fn handle_contacts(&mut self, dt: Scalar) {
@@ -186,33 +172,40 @@ impl Simulator {
         }
         for contact in self.physics.contacts() {
             // println!(">>>");
-            let cell1 = self
-                .object_cell
-                .get(&contact.id1)
-                .and_then(|cell_id| self.cells.get(cell_id).map(|cell| (cell_id, cell)));
-            let cell2 = self
-                .object_cell
-                .get(&contact.id2)
-                .and_then(|cell_id| self.cells.get(cell_id).map(|cell| (cell_id, cell)));
-            let energy_deltas = cell1.zip(cell2).map(|((id1, cell1), (id2, cell2))| {
-                let delta1 = cell1.energy_absorption_from(cell2, dt);
-                // println!("delta1: {:.4}", delta1);
-                let delta2 = cell2.energy_absorption_from(cell1, dt);
-                // println!("delta2: {:.4}", delta2);
-                ((id1, delta1), (id2, delta2))
-            });
-            if let Some(((id1, delta1), (id2, delta2))) = energy_deltas {
-                if let Some(cell1) = self.cells.get_mut(id1) {
-                    // println!("{:.4} {:.4} {:.4}", cell1.energy, delta1 - delta2, cell1.energy + delta1 - delta2);
-                    cell1.energy += delta1 - delta2;
-                    cell1.contact_count += 1.0;
-                    cell1.contact_normal += contact.normal;
+            match contact {
+                Contact::Surface { id, normal } => {
+                    self.object_cell
+                        .get(id)
+                        .and_then(|cell_id| self.cells.get_mut(cell_id))
+                        .iter_mut()
+                        .for_each(|cell| cell.on_surface_contact(*normal));
                 }
-                if let Some(cell2) = self.cells.get_mut(id2) {
-                    // println!("{:.4} {:.4} {:.4}", cell2.energy, delta2 - delta1, cell2.energy + delta2 - delta1);
-                    cell2.energy += delta2 - delta1;
-                    cell2.contact_count += 1.0;
-                    cell2.contact_normal -= contact.normal;
+                Contact::Objects { id1, id2, normal } => {
+                    let cell1 = self
+                        .object_cell
+                        .get(id1)
+                        .and_then(|cell_id| self.cells.get(cell_id).map(|cell| (cell_id, cell)));
+                    let cell2 = self
+                        .object_cell
+                        .get(id2)
+                        .and_then(|cell_id| self.cells.get(cell_id).map(|cell| (cell_id, cell)));
+                    let energy_deltas = cell1.zip(cell2).map(|((id1, cell1), (id2, cell2))| {
+                        let delta1 = cell1.energy_absorption_from(cell2, dt);
+                        // println!("delta1: {:.4}", delta1);
+                        let delta2 = cell2.energy_absorption_from(cell1, dt);
+                        // println!("delta2: {:.4}", delta2);
+                        ((id1, delta1), (id2, delta2))
+                    });
+                    if let Some(((id1, delta1), (id2, delta2))) = energy_deltas {
+                        if let Some(cell1) = self.cells.get_mut(id1) {
+                            // println!("{:.4} {:.4} {:.4}", cell1.energy, delta1 - delta2, cell1.energy + delta1 - delta2);
+                            cell1.on_cell_contact(delta1 - delta2, *normal);
+                        }
+                        if let Some(cell2) = self.cells.get_mut(id2) {
+                            // println!("{:.4} {:.4} {:.4}", cell2.energy, delta2 - delta1, cell2.energy + delta2 - delta1);
+                            cell2.on_cell_contact(delta2 - delta1, *normal);
+                        }
+                    }
                 }
             }
         }
@@ -235,22 +228,53 @@ impl Simulator {
             }
             if cell.is_dead() {
                 self.dead_cells.push(*id);
+            } else if cell.should_divide() {
+                let born_cell = cell.divide(&mut self.physics);
+                self.born_cells.push(born_cell);
             }
         }
     }
 
     fn remove_dead_cells(&mut self) {
-        let num_dead_cells = self.dead_cells.len();
         for cell_id in self.dead_cells.drain(..) {
             if let Some(cell) = self.cells.remove(&cell_id) {
-                // TODO transfer any remaining molecules to the world
+                // TODO transfer any remaining molecules/energy to the world
                 let object_id = cell.object_id;
                 self.physics.remove_object(object_id);
+                let fitness_score = Self::energy_fitness_score(&cell);
+                self.rank.insert(fitness_score, cell);
             }
         }
-        for _ in 0..num_dead_cells {
-            // self.add_random_cell();
+    }
+
+    fn add_born_cells(&mut self) {
+        for born_cell in self.born_cells.drain(..) {
+            self.cells.insert(self.next_cell_id, born_cell);
+            self.next_cell_id += 1;
         }
+
+        while self.cells.len() < self.min_cells {
+            if let Some(genome) = self.create_recombined_genome() {
+                self.add_cell(genome);
+            } else {
+                self.add_random_cell();
+            }
+        }
+    }
+
+    fn create_recombined_genome(&self) -> Option<Genome> {
+        let genome1 = self.rank.choose_random_genome();
+        let genome2 = self.rank.choose_random_genome();
+        genome1
+            .zip(genome2)
+            .map(|(genome1, genome2)| genome1.cross(&genome2))
+    }
+
+    fn energy_fitness_score(cell: &Cell) -> Scalar {
+        let stats = &cell.stats;
+        let energy_positive = stats.energy_produced + stats.energy_absorbed_in;
+        let energy_negative = stats.energy_consumed + stats.energy_absorbed_out;
+        (1.0 + energy_positive) / (1.0 + energy_negative)
     }
 }
 

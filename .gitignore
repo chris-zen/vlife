@@ -2,3 +2,4 @@
 .vscode/
 _vlife-bevy/
 /target
+.DS_Store

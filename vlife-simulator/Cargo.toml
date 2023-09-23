@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+vlife-macros = { path = "../vlife-macros" }
+
 indexmap = "2.0"
 nalgebra = "0.32"
 num-traits = "0.2"
+ordered-float = "3.9"
 paste = "1.0"
 rand = "0.8"
-
-vlife-physics = { path = "../vlife-physics" }
