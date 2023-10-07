@@ -1,19 +1,19 @@
 use eframe::{
-    egui::{self, Color32, Painter, Pos2, Rect, Response, Rgba, Rounding, Sense, Shape, Stroke},
+    egui::{self, Color32, Pos2, Rect, Rgba, Rounding, Sense, Stroke},
     emath::{self, RectTransform},
-    epaint::{CircleShape, RectShape},
+    epaint::RectShape,
 };
-use nalgebra::{Const, OPoint, UnitComplex};
-use num_traits::float::FloatConst;
+use eframe::epaint::PathShape;
+use nalgebra::{Const, OPoint};
 
-use vlife_simulator::{cell, Scalar, Vec2};
+use vlife_simulator::{Real, Vec2};
 
 use crate::app::Application;
 
 pub struct WorldPanel;
 
 impl WorldPanel {
-    pub(crate) fn ui(_ctx: &egui::Context, ui: &mut egui::Ui, app: &mut Application, dt: Scalar) {
+    pub(crate) fn ui(_ctx: &egui::Context, ui: &mut egui::Ui, app: &mut Application, dt: Real) {
         egui::Frame::canvas(ui.style())
             .inner_margin(0.0)
             .outer_margin(0.0)
@@ -23,7 +23,7 @@ impl WorldPanel {
             });
     }
 
-    fn render_simulation(ui: &mut egui::Ui, app: &mut Application, dt: Scalar) {
+    fn render_simulation(ui: &mut egui::Ui, app: &mut Application, dt: Real) {
         let (response, painter) = ui.allocate_painter(
             egui::Vec2::new(ui.available_width(), ui.available_height()),
             Sense::hover().union(Sense::click()),
@@ -38,137 +38,47 @@ impl WorldPanel {
         let to_screen = emath::RectTransform::from_to(world_rect, screen_rect);
         let from_screen = to_screen.inverse();
 
-        Self::handle_interactions(app, response, from_screen);
-
-        let size_fill_color = Rgba::from_white_alpha(0.0);
-        let size_stroke_color = Rgba::from_white_alpha(0.1);
-        let normal_color = Rgba::from_gray(1.0);
-        let selected_color = Rgba::from_rgb(1.0, 0.7, 0.0);
-        let velocity_color = Rgba::from_rgba_unmultiplied(0.0, 0.0, 1.0, 0.5);
-        let acceleration_color = Rgba::from_rgba_unmultiplied(1.0, 0.0, 0.0, 0.3);
-
-        for (cell_id, cell) in app.simulator.cells() {
-            if let Some(object) = app.simulator.get_cell_object(cell_id) {
-                let position = object.position();
-                let velocity = object.velocity();
-                let velocity_p1 = position + velocity.normalize() * object.radius();
-                let velocity_p2 = velocity_p1 + velocity;
-                let acceleration = cell.movement_velocity();
-                let acceleration_p1 = position + acceleration.normalize() * object.radius();
-                let acceleration_p2 = acceleration_p1 + acceleration;
-
-                let energy = (cell.energy() / cell::MAX_ENERGY).min(1.0) as f32;
-                let energy_loss = ((-cell.energy_delta()).max(0.0) / dt).min(1.0) as f32;
-                let energy_gain = (cell.energy_delta().max(0.0) / dt).min(1.0) as f32;
-
-                let fill_color = Rgba::from_rgb(energy_loss, energy, energy_gain);
-                let stroke_color = app
-                    .selected_cell
-                    .filter(|selected_id| *selected_id == cell_id)
-                    .map_or(normal_color, |_| selected_color);
-
-                painter.add(RectShape::stroke(
-                    screen_rect.expand(1.0),
-                    Rounding::none(),
-                    Stroke::new(1.0, Color32::from_gray(128)),
-                ));
-                painter.add(CircleShape {
-                    center: position.transform_pos(&to_screen),
-                    radius: cell.size() as f32,
-                    fill: size_fill_color.into(),
-                    stroke: (1.0, size_stroke_color).into(),
-                });
-                painter.add(CircleShape {
-                    center: position.transform_pos(&to_screen),
-                    radius: cell.contracted_size() as f32,
-                    fill: fill_color.into(),
-                    stroke: (1.0, stroke_color).into(),
-                });
-
-                Self::paint_eyes(
-                    &painter,
-                    &to_screen,
-                    position,
-                    cell.movement_direction(),
-                    cell.contracted_size(),
+        painter.add(RectShape::stroke(
+            screen_rect.expand(1.0),
+            Rounding::none(),
+            Stroke::new(1.0, Color32::from_gray(128)),
+        ));
+        for cell_view in app.simulator.cells() {
+            let membrane = cell_view.membrane().into_iter().map(|pos| pos.transform_pos(&to_screen)).collect::<Vec<_>>();
+            for pos in &membrane {
+                painter.circle(
+                    *pos,
+                    6.0,
+                    Color32::LIGHT_BLUE,
+                    Stroke::new(1.0, Color32::LIGHT_BLUE),
                 );
-
-                painter.add(Shape::line_segment(
-                    [
-                        velocity_p1.transform_pos(&to_screen),
-                        velocity_p2.transform_pos(&to_screen),
-                    ],
-                    (1.0, velocity_color),
-                ));
-                painter.add(Shape::line_segment(
-                    [
-                        acceleration_p1.transform_pos(&to_screen),
-                        acceleration_p2.transform_pos(&to_screen),
-                    ],
-                    (1.0, acceleration_color),
-                ));
             }
+            // painter.add(PathShape::closed_line(membrane, Stroke::new(1.0, Color32::WHITE)));
+
+            let center_pos = cell_view.position().transform_pos(&to_screen);
+            painter.circle(
+                center_pos,
+                1.0,
+                Color32::WHITE,
+                Stroke::new(1.0, Color32::WHITE),
+            );
+            // painter.line_segment([center_pos, membrane[0]], (1.0, Color32::GOLD));
+
+            // let pos = cell_body.ball().position();
+            // let rotation = cell_body.ball().rotation_vector();
+            // let radius = cell_body.cell().radius();
+            // let head = rotation * radius + pos;
+            // let pos = Vec2::new(pos.x, world_rect.max.y as Real - pos.y).transform_pos(&to_screen);
+            // let head =
+            //     Vec2::new(head.x, world_rect.max.y as Real - head.y).transform_pos(&to_screen);
+            // painter.circle(
+            //     pos,
+            //     radius as f32,
+            //     Color32::DARK_GRAY,
+            //     Stroke::new(1.0, Color32::WHITE),
+            // );
+            // painter.line_segment([pos, head], Stroke::new(1.0, Color32::WHITE));
         }
-    }
-
-    fn handle_interactions(app: &mut Application, response: Response, from_screen: RectTransform) {
-        // if let Some(pos) = response.hover_pos() {
-        // println!("H: {:?} {}", pos, response.hovered());
-        // }
-        if let Some(pos) = response.interact_pointer_pos() {
-            // println!("I: {:?} {} {}", pos, response.clicked(), response.dragged());
-            if response.clicked() {
-                let pos = from_screen.transform_pos(pos);
-                if let Some(cell_id) = app
-                    .simulator
-                    .get_cell_id_closer_to(pos.x as Scalar, pos.y as Scalar)
-                {
-                    app.on_cell_selected(cell_id);
-                }
-            }
-        }
-    }
-
-    fn paint_eyes(
-        painter: &Painter,
-        to_screen: &RectTransform,
-        position: Vec2,
-        direction: Scalar,
-        contracted_size: Scalar,
-    ) {
-        let left_eye_angle = UnitComplex::new(-direction + 0.1 * Scalar::PI());
-        let right_eye_angle = UnitComplex::new(-direction - 0.1 * Scalar::PI());
-        let left_eye_vec = left_eye_angle.transform_vector(&Vec2::x_axis());
-        let right_eye_vec = right_eye_angle.transform_vector(&&Vec2::x_axis());
-        let white_eye_distance = 0.8 * contracted_size;
-        let white_eye_size = 0.25 * contracted_size as f32;
-        let pupil_eye_distance = 0.78 * contracted_size;
-        let pupil_eye_size = 0.15 * contracted_size as f32;
-
-        painter.add(CircleShape {
-            center: (left_eye_vec * white_eye_distance + position).transform_pos(&to_screen),
-            radius: white_eye_size,
-            fill: Color32::WHITE,
-            stroke: Stroke::NONE,
-        });
-        painter.add(CircleShape {
-            center: (left_eye_vec * pupil_eye_distance + position).transform_pos(&to_screen),
-            radius: pupil_eye_size,
-            fill: Color32::BLACK,
-            stroke: Stroke::NONE,
-        });
-        painter.add(CircleShape {
-            center: (right_eye_vec * white_eye_distance + position).transform_pos(&to_screen),
-            radius: white_eye_size,
-            fill: Color32::WHITE,
-            stroke: Stroke::NONE,
-        });
-        painter.add(CircleShape {
-            center: (right_eye_vec * pupil_eye_distance + position).transform_pos(&to_screen),
-            radius: pupil_eye_size,
-            fill: Color32::BLACK,
-            stroke: Stroke::NONE,
-        });
     }
 }
 
@@ -182,7 +92,7 @@ impl TransformToScreen for Vec2 {
     }
 }
 
-impl TransformToScreen for OPoint<Scalar, Const<2>> {
+impl TransformToScreen for OPoint<Real, Const<2>> {
     fn transform_pos(&self, transform: &RectTransform) -> Pos2 {
         transform.transform_pos(Pos2::new(self.x as f32, self.y as f32))
     }

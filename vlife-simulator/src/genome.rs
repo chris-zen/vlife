@@ -2,7 +2,8 @@ use rand::Rng;
 use std::collections::BTreeSet;
 use std::{cell::RefCell, collections::BTreeMap};
 
-use crate::{Scalar, M};
+use crate::real::Real;
+use crate::M;
 
 pub trait BuildGenome {
     fn build_genome<'a>(&self, builder: GenomeBuilder);
@@ -23,7 +24,7 @@ impl Genome {
         self.genes.get(&id)
     }
 
-    pub(crate) fn _mutate(&mut self, _num_mutations: usize, _probability: Scalar) {
+    pub(crate) fn _mutate(&mut self, _num_mutations: usize, _probability: Real) {
         todo!()
     }
 
@@ -76,7 +77,7 @@ impl Genome {
 pub struct Gen {
     // This is used by the GenomeBuilder macro
     #[allow(dead_code)]
-    pub(crate) value: Scalar,
+    pub(crate) value: Real,
 }
 
 #[derive(Clone)]

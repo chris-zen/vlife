@@ -1,14 +1,15 @@
 use eframe::egui::{self, ScrollArea};
 use std::time::Instant;
 
-use vlife_simulator::{CellId, Scalar, Simulator, Vec2};
+use vlife_simulator::{CellHandle, Real};
+use vlife_simulator::{Simulator, Vec2};
 
 use crate::central_panel::CentralPanel;
 use crate::top_bar::TopBar;
 
 const NUM_INITIAL_CELLS: usize = 500;
 
-const DEFAULT_DELTA: Scalar = 1.0 / 60.0; // 60 Hz
+const DEFAULT_DELTA: Real = 1.0 / 60.0; // 60 Hz
 
 pub(crate) struct Application {
     last_update: Option<Instant>,
@@ -20,7 +21,7 @@ pub(crate) struct Application {
     pub(crate) time_ratio: f64,
     pub(crate) world_size: Vec2,
     pub(crate) simulator: Simulator,
-    pub(crate) selected_cell: Option<CellId>,
+    pub(crate) selected_cell: Option<CellHandle>,
     pub(crate) paused: bool,
     pub(crate) speed: f32,
 }
@@ -38,7 +39,7 @@ impl Application {
             time_ratio: 1.0,
             world_size,
             simulator,
-            selected_cell: Some(0),
+            selected_cell: None,
             paused: false,
             speed: 1.0,
         }
@@ -53,9 +54,9 @@ impl Application {
                 let scroll_area = ScrollArea::vertical().auto_shrink([false; 2]);
                 scroll_area.show(ui, |ui| {
                     if let Some(cell_id) = self.selected_cell {
-                        if let Some(cell) = self.simulator.get_cell_view(cell_id) {
-                            ui.monospace(format!("{cell}"));
-                        }
+                        // if let Some(cell) = self.simulator.get_cell_view(cell_id) {
+                        //     ui.monospace(format!("{cell}"));
+                        // }
                     }
                 });
             });
@@ -66,10 +67,14 @@ impl Application {
     }
 
     fn create_simulator(world_size: Vec2) -> Simulator {
-        Simulator::new(world_size).with_min_cells(NUM_INITIAL_CELLS)
+        let mut simulator = Simulator::new(world_size);
+        for _ in 0..1 {
+            simulator.create_random_cell();
+        }
+        simulator
     }
 
-    fn update_simulation(&mut self) -> Scalar {
+    fn update_simulation(&mut self) -> Real {
         self.update_frames_per_second();
         if !self.paused {
             self.advance_simulation()
@@ -102,19 +107,20 @@ impl Application {
         }
     }
 
-    fn advance_simulation(&mut self) -> Scalar {
+    fn advance_simulation(&mut self) -> Real {
         let mut time = 0.0;
-        let total_time = self.speed as Scalar * DEFAULT_DELTA;
+        let dt = self.simulator.step_time();
+        let total_time = self.speed as Real * dt;
         while time <= total_time {
             self.step_count += 1;
-            self.simulator.update(DEFAULT_DELTA);
-            time += DEFAULT_DELTA;
+            self.simulator.update();
+            time += dt;
         }
         total_time
     }
 
-    pub(crate) fn on_cell_selected(&mut self, cell_id: CellId) {
-        self.selected_cell = Some(cell_id)
+    pub(crate) fn on_cell_selected(&mut self, cell_handle: CellHandle) {
+        self.selected_cell = Some(cell_handle)
     }
 
     pub(crate) fn on_pause_play_button(&mut self) {

@@ -1,8 +1,7 @@
 use rand::{seq::SliceRandom, Rng};
-use vlife_macros::BuildGenome;
 
 use crate::genome::{BuildGenome, Gen, GenomeBuilder};
-use crate::Scalar;
+use crate::real::Real;
 use crate::{cell::NUM_MOLECULES, VView, M, V};
 
 macro_rules! define_inputs {
@@ -47,7 +46,7 @@ macro_rules! define_inputs {
     (@scalar $name:ident, $start:expr) => {
         paste::paste! {
             impl Neurons {
-                pub fn [<set_ $name>](&mut self, value: Scalar) {
+                pub fn [<set_ $name>](&mut self, value: Real) {
                     self.inputs[$start] = value;
                 }
             }
@@ -107,7 +106,7 @@ macro_rules! define_outputs {
     (@scalar $name:ident, $start:expr) => {
         paste::paste! {
             impl Neurons {
-                pub fn [<get_ $name>](&self) -> Scalar {
+                pub fn [<get_ $name>](&self) -> Real {
                     self.output_layer.outputs()[$start]
                 }
             }
@@ -128,16 +127,13 @@ macro_rules! define_outputs {
 
 const NUM_PROCESSING: usize = NUM_INPUTS / 2;
 
-#[derive(Clone, BuildGenome)]
+#[derive(Clone)]
 pub struct Neurons {
     inputs: V<NUM_INPUTS>,
-    #[build_genome(nested)]
     input_layer: Layer<NUM_INPUTS, NUM_PROCESSING>,
-    #[build_genome(nested)]
     processing_layer: Layer<NUM_PROCESSING, NUM_PROCESSING>,
-    #[build_genome(nested)]
     output_layer: Layer<NUM_PROCESSING, NUM_OUTPUTS>,
-    working_neurons: Scalar,
+    working_neurons: Real,
 }
 
 impl Neurons {
@@ -160,7 +156,7 @@ impl Neurons {
         }
     }
 
-    pub fn num_working_neurons(&self) -> Scalar {
+    pub fn num_working_neurons(&self) -> Real {
         self.working_neurons
     }
 
@@ -249,14 +245,11 @@ impl std::fmt::Display for Neurons {
     }
 }
 
-#[derive(Clone, BuildGenome)]
+#[derive(Clone)]
 pub struct Layer<const I: usize, const O: usize> {
     /// Every row contains the weights for a given neuron.
-    #[build_genome(nested)]
     weights: M<O, I>,
-    #[build_genome(nested)]
     bias: V<O>,
-    #[build_genome(nested)]
     activation: ActivationFunction,
     outputs: V<O>,
 }
@@ -281,7 +274,7 @@ impl<const I: usize, const O: usize> Layer<I, O> {
         &self.outputs
     }
 
-    fn num_working_neurons(&self) -> Scalar {
+    fn num_working_neurons(&self) -> Real {
         let active = self
             .weights
             .apply_into(|x| *x = if x.abs() > 0.0 { 1.0 } else { 0.0 });
