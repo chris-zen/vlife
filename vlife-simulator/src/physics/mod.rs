@@ -1,14 +1,14 @@
+pub mod collisions;
 mod engine;
+mod geometry;
 mod particle;
 mod spring;
-mod collider;
-mod bounding_box;
 
+pub use collisions::collider::polygon::PolygonCollider;
 pub use {
-    engine::{Physics, ParticleHandle, SpringHandle},
+    engine::{ParticleHandle, Physics, SpringHandle},
     particle::Particle,
     spring::Spring,
-    collider::Collider,
 };
 
 trait BuilderExt
@@ -26,4 +26,3 @@ where
         }
     }
 }
-

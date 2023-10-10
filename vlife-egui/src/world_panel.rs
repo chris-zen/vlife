@@ -1,9 +1,9 @@
+use eframe::epaint::PathShape;
 use eframe::{
     egui::{self, Color32, Pos2, Rect, Rgba, Rounding, Sense, Stroke},
     emath::{self, RectTransform},
     epaint::RectShape,
 };
-use eframe::epaint::PathShape;
 use nalgebra::{Const, OPoint};
 
 use vlife_simulator::{Real, Vec2};
@@ -44,25 +44,33 @@ impl WorldPanel {
             Stroke::new(1.0, Color32::from_gray(128)),
         ));
         for cell_view in app.simulator.cells() {
-            let membrane = cell_view.membrane().into_iter().map(|pos| pos.transform_pos(&to_screen)).collect::<Vec<_>>();
-            for pos in &membrane {
-                painter.circle(
-                    *pos,
-                    6.0,
-                    Color32::LIGHT_BLUE,
-                    Stroke::new(1.0, Color32::LIGHT_BLUE),
-                );
-            }
-            // painter.add(PathShape::closed_line(membrane, Stroke::new(1.0, Color32::WHITE)));
+            let membrane = cell_view
+                .membrane()
+                .into_iter()
+                .map(|pos| pos.transform_pos(&to_screen))
+                .collect::<Vec<_>>();
+            // for pos in &membrane {
+            //     painter.circle(
+            //         *pos,
+            //         6.0,
+            //         Color32::LIGHT_BLUE,
+            //         Stroke::new(1.0, Color32::LIGHT_BLUE),
+            //     );
+            // }
+            let first_point = membrane[0];
+            painter.add(PathShape::closed_line(
+                membrane,
+                Stroke::new(1.0, Color32::WHITE),
+            ));
 
             let center_pos = cell_view.position().transform_pos(&to_screen);
-            painter.circle(
-                center_pos,
-                1.0,
-                Color32::WHITE,
-                Stroke::new(1.0, Color32::WHITE),
-            );
-            // painter.line_segment([center_pos, membrane[0]], (1.0, Color32::GOLD));
+            // painter.circle(
+            //     center_pos,
+            //     1.0,
+            //     Color32::WHITE,
+            //     Stroke::new(1.0, Color32::WHITE),
+            // );
+            painter.line_segment([center_pos, first_point], (1.0, Color32::GOLD));
 
             // let pos = cell_body.ball().position();
             // let rotation = cell_body.ball().rotation_vector();

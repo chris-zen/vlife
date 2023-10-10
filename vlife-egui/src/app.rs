@@ -40,7 +40,7 @@ impl Application {
             world_size,
             simulator,
             selected_cell: None,
-            paused: false,
+            paused: true,
             speed: 1.0,
         }
     }
@@ -68,7 +68,7 @@ impl Application {
 
     fn create_simulator(world_size: Vec2) -> Simulator {
         let mut simulator = Simulator::new(world_size);
-        for _ in 0..1 {
+        for _ in 0..2 {
             simulator.create_random_cell();
         }
         simulator

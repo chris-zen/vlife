@@ -16,8 +16,16 @@ pub struct CellBody {
 
 impl CellBody {
     pub fn view<'a>(&'a self, handle: CellHandle, physics: &'a Physics) -> CellView<'a> {
-        let center = physics.get_particle(self.center).expect("center-particle").clone();
-        let particles = self.particles.iter().filter_map(|handle| physics.get_particle(*handle)).cloned().collect();
+        let center = physics
+            .get_particle(self.center)
+            .expect("center-particle")
+            .clone();
+        let particles = self
+            .particles
+            .iter()
+            .filter_map(|handle| physics.get_particle(*handle))
+            .cloned()
+            .collect();
         CellView::new(handle, &self.cell, center, particles)
     }
 
@@ -38,8 +46,18 @@ pub struct CellView<'a> {
 }
 
 impl<'a> CellView<'a> {
-    pub fn new(handle: CellHandle, cell: &'a Cell, center: Particle, particles: Vec<Particle>) -> Self {
-        Self { handle, cell, center, particles }
+    pub fn new(
+        handle: CellHandle,
+        cell: &'a Cell,
+        center: Particle,
+        particles: Vec<Particle>,
+    ) -> Self {
+        Self {
+            handle,
+            cell,
+            center,
+            particles,
+        }
     }
 
     pub fn handle(&self) -> CellHandle {
@@ -55,7 +73,10 @@ impl<'a> CellView<'a> {
     }
 
     pub fn membrane(&self) -> Vec<Vec2> {
-        self.particles.iter().map(|particle| particle.position).collect()
+        self.particles
+            .iter()
+            .map(|particle| particle.position)
+            .collect()
     }
 }
 
@@ -74,7 +95,7 @@ pub struct CellViewMut<'a> {
 
 impl<'a> CellViewMut<'a> {
     pub fn new(handle: CellHandle, cell: &'a mut Cell) -> Self {
-        Self { handle, cell}
+        Self { handle, cell }
     }
 
     pub fn handle(&self) -> CellHandle {

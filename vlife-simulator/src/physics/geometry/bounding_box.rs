@@ -1,6 +1,7 @@
 use nalgebra::Point2;
+use std::sync::TryLockError::Poisoned;
 
-use crate::Real;
+use crate::{Real, Vec2};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AxisAlignedBoundingBox {
@@ -11,6 +12,13 @@ pub struct AxisAlignedBoundingBox {
 impl AxisAlignedBoundingBox {
     pub fn new(size: Point2<Real>, center: Point2<Real>) -> Self {
         Self { size, center }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            size: Point2::origin(),
+            center: Point2::origin(),
+        }
     }
 
     pub fn from_min_max(min: Point2<Real>, max: Point2<Real>) -> Self {
@@ -27,6 +35,13 @@ impl AxisAlignedBoundingBox {
         let two_times_distance = (other.center - self.center).abs() * 2.0;
         let total_size = other.size.coords + self.size.coords;
         two_times_distance < total_size
+    }
+
+    pub fn contains_point(&self, point: Point2<Real>) -> bool {
+        let half_size = 0.5 * self.size.coords;
+        let min = self.center - half_size;
+        let max = self.center + half_size;
+        point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y
     }
 }
 

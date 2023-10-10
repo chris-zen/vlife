@@ -1,7 +1,4 @@
-use num_traits::Float;
-
-use crate::object_set::ObjectSet;
-use crate::physics::{engine::ParticleHandle, particle::Particle};
+use crate::physics::engine::ParticleHandle;
 use crate::Real;
 
 pub struct Spring {
@@ -23,18 +20,6 @@ impl Spring {
             particle2,
             length,
             strength,
-        }
-    }
-
-    pub fn apply_constrain(&self, particles: &mut ObjectSet<Particle>) {
-        if let Some((particle1, particle2)) = particles.get_pair_mut(self.particle1, self.particle2)
-        {
-            let axis = particle2.position - particle1.position;
-            let distance = axis.magnitude() + Real::epsilon();
-            let norm_dist_strength =
-                (distance - self.length) / (distance * (particle1.mass + particle2.mass)) * self.strength;
-            particle1.position += axis * norm_dist_strength * particle1.mass;
-            particle2.position -= axis * norm_dist_strength * particle2.mass;
         }
     }
 }

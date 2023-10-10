@@ -1,11 +1,12 @@
+use nalgebra::UnitComplex;
 use rand::Rng;
 use std::fmt::Display;
-use nalgebra::UnitComplex;
 
 use crate::cell::Cell;
-use crate::cell_body::{CellBody, CellHandle, CellView, CellViewMut};
+use crate::cell_body::{CellBody, CellHandle, CellView};
 use crate::object_set::ObjectSet;
-use crate::physics::{Collider, Particle, Physics, Spring};
+use crate::physics::collisions::collider::polygon::PolygonCollider;
+use crate::physics::{Particle, Physics, Spring};
 use crate::real::{Real, RealConst};
 use crate::Vec2;
 
@@ -31,61 +32,84 @@ impl Simulator {
         let cell = Cell::random();
         // let radius = cell.radius();
 
-        let num_particles = 16;
-        let perimeter = 16.0 * num_particles as Real;
+        let num_particles = 9;
+        let radius = 48.0;
+        let surface_strength = 0.9;
+        let internal_strength = 0.001;
+        let include_springs = true;
+
         let angle_step = Real::TWO_PI / num_particles as Real;
         let r = UnitComplex::new(-angle_step);
-        let radius = perimeter / Real::TWO_PI;
 
-        // let center = Vec2::new(
-        //     rng.gen_range((0.0 + radius)..=(self.world_size.x - radius)),
-        //     rng.gen_range((0.0 + radius)..=(self.world_size.y - radius)),
-        // );
         let center = Vec2::new(
-            550.0,
-            200.0,
+            rng.gen_range((100.0 + radius)..=(self.world_size.x - radius - 100.0)),
+            rng.gen_range((100.0 + radius)..=(self.world_size.y - radius - 100.0)),
         );
+        // let center = Vec2::new(250.0, 150.0);
         // TODO Check that the space is empty
 
-        // let velocity = Vec2::new(
-        //     rng.gen_range(-100.0..100.0),
-        //     rng.gen_range(-100.0..100.0),
-        // );
-        let velocity = Vec2::new(
-            -100.0,
-            100.0,
-        );
+        let velocity = Vec2::new(rng.gen_range(-2.0..2.0), rng.gen_range(-2.0..2.0))
+            * self.physics.step_time()
+            / self.physics.num_iterations() as Real;
+        // let velocity =
+        //     Vec2::new(40.0, 5.0) * self.physics.step_time() / self.physics.num_iterations() as Real;
 
         let mut v = Vec2::x() * radius;
         let mut particles = Vec::new();
         let mut springs = Vec::new();
         let mut last_particle = None;
         let mut last_position = None::<Vec2>;
-        let center_particle = self.physics.add_particle(Particle::new(1.0, center).with_velocity(velocity));
+        let center_particle = self
+            .physics
+            .add_particle(Particle::new(center).with_velocity(velocity));
         for _ in 0..num_particles {
             let position = center + v;
-            let particle = Particle::new(6.0, position).with_velocity(velocity);
+            let particle = Particle::new(position).with_velocity(velocity);
             let particle = self.physics.add_particle(particle);
             particles.push(particle);
-            let spring = self.physics.add_spring(Spring::new(center_particle, particle, radius, 0.4));
-            springs.push(spring);
+
+            if include_springs {
+                let spring = self.physics.add_spring(Spring::new(
+                    center_particle,
+                    particle,
+                    radius,
+                    internal_strength,
+                ));
+                springs.push(spring);
+            }
+
             match last_particle.zip(last_position) {
                 None => {}
                 Some((last_particle, last_position)) => {
-                    let length = (position - last_position).magnitude();
-                    let spring = self.physics.add_spring(Spring::new(last_particle, particle, length, 0.6));
-                    springs.push(spring);
+                    if include_springs {
+                        let length = (position - last_position).magnitude();
+                        let spring = self.physics.add_spring(Spring::new(
+                            last_particle,
+                            particle,
+                            length,
+                            surface_strength,
+                        ));
+                        springs.push(spring);
+                    }
                 }
             }
             last_particle = Some(particle);
             last_position = Some(position);
             v = r.transform_vector(&v);
         }
-        let length = (last_position.unwrap() - (center + Vec2::x() * radius)).magnitude();
-        let spring = self.physics.add_spring(Spring::new(last_particle.unwrap(), particles[0], length, 1.0));
-        springs.push(spring);
 
-        let collider = Collider::new(particles.clone());
+        if include_springs {
+            let length = (last_position.unwrap() - (center + Vec2::x() * radius)).magnitude();
+            let spring = self.physics.add_spring(Spring::new(
+                last_particle.unwrap(),
+                particles[0],
+                length,
+                surface_strength,
+            ));
+            springs.push(spring);
+        }
+
+        let collider = PolygonCollider::new(particles.clone());
         self.physics.add_collider(collider);
 
         let cell_body = CellBody {
