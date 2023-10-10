@@ -83,3 +83,41 @@ impl CollisionResolver {
         println!("({particle_point:.2?}), ({segment_point1:.2?} -- {segment_point2:.2?}), {lambda}");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use nalgebra::Point2;
+    use crate::object_set::ObjectSet;
+    use crate::physics::collisions::collision::PointInPolygon;
+    use crate::physics::collisions::CollisionsContext;
+    use crate::physics::collisions::resolver::CollisionResolver;
+    use crate::physics::Particle;
+    use crate::Vec2;
+
+    #[test]
+    fn test() {
+        let mut contacts = Vec::new();
+        let mut particles = ObjectSet::new();
+        let particle_point = Point2::new(1.1, 1.0);
+        let segment_point1 = Point2::new(1.0, 2.0);
+        let segment_point2 = Point2::new(1.0, 0.0);
+        let particle_handle = particles.insert(Particle::new(particle_point.coords));
+        let segment_handle1 = particles.insert(Particle::new(segment_point1.coords));
+        let segment_handle2 = particles.insert(Particle::new(segment_point2.coords));
+
+        let collision = PointInPolygon {
+            particle_handle,
+            particle_point,
+            segment_handle1,
+            segment_handle2,
+            segment_point1,
+            segment_point2,
+            ratio: 0.5,
+            depth: 0.1,
+        };
+
+        let resolver = CollisionResolver::new();
+        let mut context = CollisionsContext::new(&mut particles, &mut contacts);
+        resolver.resolve(collision, &mut context);
+    }
+}
